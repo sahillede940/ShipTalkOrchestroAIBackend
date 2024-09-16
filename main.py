@@ -65,6 +65,16 @@ def get_post(post_id: str):
             return post
     raise HTTPException(status_code=404, detail="Post not found")
 
+@app.delete("/delete_post/{post_id}")
+def delete_post(post_id: str):
+    posts_data = read_json_file()
+    for post in posts_data:
+        if post["id"] == post_id:
+            posts_data.remove(post)
+            write_json_file(posts_data)
+            return {"message": "Post deleted successfully"}
+    raise HTTPException(status_code=404, detail="Post not found")
+
 
 @app.post("/upload_post/")
 def upload_post(post: Post):
