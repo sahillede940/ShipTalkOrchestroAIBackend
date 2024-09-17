@@ -13,8 +13,6 @@ posts_path = f"{json_folder}/{json_file_name}.json"
 def read_json_file():
     if os.path.exists(posts_path):
         with open(posts_path, "r") as file:
-            if os.stat(posts_path).st_size == 0:
-                return []
             data = json.load(file)
             for post in data:
                 post["created_at"] = datetime.fromisoformat(post["created_at"])
