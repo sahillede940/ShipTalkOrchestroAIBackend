@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List
@@ -53,8 +53,12 @@ class Question(BaseModel):
 
 
 @app.get("/healthcheck")
-def healthcheck():
-    return {"message": "Server is Running"}
+def healthcheck(request: Request):
+    return {
+        "message": "Server is Running",
+        "domain": request.url.hostname,
+        "ip": request.client.host,
+    }
 
 
 @app.get("/get_post/{post_id}")
@@ -64,6 +68,7 @@ def get_post(post_id: str):
         if post["id"] == post_id:
             return post
     raise HTTPException(status_code=404, detail="Post not found")
+
 
 @app.delete("/delete_post/{post_id}")
 def delete_post(post_id: str):
@@ -129,19 +134,22 @@ def get_posts():
     return posts_data
 
 
-def sanitize_json_string(json_string: str) -> str:
-    # Remove invalid control characters
-    json_string = re.sub(r"[\x00-\x1f\x7f]", "", json_string)
-    return json_string
-
-
 @app.post("/AI_bot/")
-def AI_bot(question: Question):
+def AI_bot(question: Question, request: Request):
     response = LLM(question.question)
-    sanitized_response = sanitize_json_string(response)
     try:
-        parsed_response = json.loads(sanitized_response)
-        return parsed_response
+        if response.get("related_posts", None):
+            for post in response.get("related_posts", []):
+                PORT = request.url.port
+                if PORT:
+                    post["url"] = (
+                        f"{request.url.scheme}://{request.url.hostname}:{PORT}/get_post/{post['id']}"
+                    )
+                else:
+                    post["url"] = (
+                        f"{request.url.scheme}://{request.url.hostname}/get_post/{post['id']}"
+                    )
+        return response
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=500, detail=f"Invalid JSON response from LLM: {str(e)}"

@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 
 
-# Path to the JSON file
+# Path to the JSON filez``
 json_file_name = "posts_data"
 json_folder = "Posts"
 posts_path = f"{json_folder}/{json_file_name}.json"
