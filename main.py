@@ -131,6 +131,7 @@ def like_comment(post_id: str, comment_id: str):
 @app.get("/get_posts/")
 def get_posts():
     posts_data = read_json_file()
+    posts_data = sorted(posts_data, key=lambda x: x["created_at"], reverse=True)
     return posts_data
 
 
