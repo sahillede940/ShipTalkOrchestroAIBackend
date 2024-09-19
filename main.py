@@ -8,7 +8,7 @@ from utils import read_json_file, write_json_file
 from chatbot import LLM
 import re
 from fastapi.middleware.cors import CORSMiddleware
-
+import random
 
 app = FastAPI()
 
