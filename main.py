@@ -1,18 +1,27 @@
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
-from datetime import datetime
-from typing import List
-import json
-import uuid
-from utils import read_json_file, write_json_file
+from os import system
+from fastapi import FastAPI, Request, HTTPException, Depends
 from chatbot import LLM
-import re
 from fastapi.middleware.cors import CORSMiddleware
+from sql_app.models import Base, Post, Comment
+from sql_app.schemas import CommentBase, PostBase, QuestionBase
+from sql_app.database import engine, get_db
+from sqlalchemy.orm import Session
+
+import json
+Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI()
 
-# OPEN TO ALL ORIGINS
+
+def run_migration():
+    system("alembic upgrade head")
+
+
+@app.on_event("startup")
+def startup_event():
+    run_migration()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,35 +30,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-class Comment(BaseModel):
-    id: str = str(uuid.uuid4())
-    content: str
-    upvotes: int = 0
-    author: str = "Anonymous"
-    created_at: datetime = datetime.now()
-
-    class Config:
-        validate_assignment = True
-        json_encoders = {datetime: lambda v: v.isoformat()}
-
-
-class Post(BaseModel):
-    id: str = str(uuid.uuid4())
-    title: str
-    content: str
-    upvotes: int = 0
-    comments: List[Comment] = []
-    author: str = "Anonymous"
-    created_at: datetime = datetime.now()
-
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
-
-
-class Question(BaseModel):
-    question: str
 
 
 @app.get("/healthcheck")
@@ -61,82 +41,95 @@ def healthcheck(request: Request):
     }
 
 
-@app.get("/get_post/{post_id}")
-def get_post(post_id: str):
-    posts_data = read_json_file()
-    for post in posts_data:
-        if post["id"] == post_id:
-            return post
-    raise HTTPException(status_code=404, detail="Post not found")
-
-
-@app.delete("/delete_post/{post_id}")
-def delete_post(post_id: str):
-    posts_data = read_json_file()
-    for post in posts_data:
-        if post["id"] == post_id:
-            posts_data.remove(post)
-            write_json_file(posts_data)
-            return {"message": "Post deleted successfully"}
-    raise HTTPException(status_code=404, detail="Post not found")
-
+@app.get("/get_posts/")
+def get_posts(db=Depends(get_db)):
+    posts = db.query(Post).order_by(Post.created_at.desc()).all()
+    return posts
 
 @app.post("/upload_post/")
-def upload_post(post: Post):
-    posts_data = read_json_file()
+def upload_post(post: PostBase, db=Depends(get_db)):
     post_data = post.model_dump()
-    post_id = str(uuid.uuid4())
-    post_data["id"] = post_id
-    posts_data.append(post_data)
-    write_json_file(posts_data)
-    return post_data
+    db_post = Post(**post_data)
+    db.add(db_post)
+    db.commit()
+    db.refresh(db_post)
+    return db_post
 
 
-@app.post("/upload_comment/{post_id}")
-def upload_comment(post_id: str, comment: Comment):
-    print(post_id)
-    posts_data = read_json_file()
-    for post in posts_data:
-        if post["id"] == post_id:
-            post["comments"].append(comment.model_dump())
-            write_json_file(posts_data)
-            return comment.model_dump()
+@app.get("/get_post/{post_id}")
+def get_post(post_id: str, db=Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if post:
+        return post
     raise HTTPException(status_code=404, detail="Post not found")
 
 
 @app.get("/like_post/{post_id}")
-def like_post(post_id: str):
-    posts_data = read_json_file()
-    for post in posts_data:
-        if post["id"] == post_id:
-            post["upvotes"] += 1
-            write_json_file(posts_data)
-            return post
+def like_post(post_id: str, db=Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if post:
+        post.upvotes += 1
+        db.commit()
+        db.refresh(post)
+        return post
     raise HTTPException(status_code=404, detail="Post not found")
 
 
+@app.get("/delete_post/{post_id}")
+def delete_post(post_id: str, db=Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if post:
+        db.delete(post)
+        db.commit()
+        return {"message": "Post deleted successfully"}
+    raise HTTPException(status_code=404, detail="Post not found")
+
+
+@app.post("/upload_comment/{post_id}")
+def upload_comment(post_id: str, comment: CommentBase, db: Session = Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    comment_data = comment.dict()
+    db_comment = Comment(**comment_data)
+    post.comments.append(db_comment)
+    db.commit()
+    db.refresh(db_comment)
+    return db_comment
+
 @app.get("/like_comment/{post_id}/{comment_id}")
-def like_comment(post_id: str, comment_id: str):
-    posts_data = read_json_file()
-    for post in posts_data:
-        if post["id"] == post_id:
-            for comment in post["comments"]:
-                if comment["id"] == comment_id:
-                    comment["upvotes"] += 1
-                    write_json_file(posts_data)
-                    return comment
-    raise HTTPException(status_code=404, detail="Comment not found")
+def like_comment(post_id: str, comment_id: str, db=Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
 
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
 
-@app.get("/get_posts/")
-def get_posts():
-    posts_data = read_json_file()
-    return posts_data
+    comment.upvotes += 1
+    db.commit()
+    db.refresh(comment)
+    return comment
 
+@app.get("/delete_comment/{post_id}/{comment_id}")
+def delete_comment(post_id: str, comment_id: str, db=Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    db.delete(comment)
+    db.commit()
+    return {"message": "Comment deleted successfully"}
 
 @app.post("/AI_bot/")
-def AI_bot(question: Question, request: Request):
-    response = LLM(question.question)
+def AI_bot(question: QuestionBase, request: Request, db: Session = Depends(get_db)):
+    response = LLM(question.question, db)
     try:
         if response.get("related_posts", None):
             for post in response.get("related_posts", []):
