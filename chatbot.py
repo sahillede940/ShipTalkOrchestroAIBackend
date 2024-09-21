@@ -1,12 +1,10 @@
 import json
 import re
-from fastapi import Depends
 from openai import RateLimitError
 from sqlalchemy.orm import Session
-from langchain_openai import ChatOpenAI, AzureChatOpenAI
+from langchain_openai import ChatOpenAI
 
 from sql_app.models import Post
-from sql_app.database import get_db
 
 
 system_prompt = """

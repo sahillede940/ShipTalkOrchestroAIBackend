@@ -1,27 +1,17 @@
-from os import system
-from fastapi import FastAPI, Request, HTTPException, Depends
-from chatbot import LLM
-from fastapi.middleware.cors import CORSMiddleware
-from sql_app.models import Base, Post, Comment
-from sql_app.schemas import CommentBase, PostBase, QuestionBase
-from sql_app.database import engine, get_db
-from sqlalchemy.orm import Session
-
 import json
+from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from sql_app.models import Post, Comment
+from sql_app.schemas import CommentBase, PostBase, QuestionBase
+from sql_app.database import engine, get_db, Base
+from sqlalchemy.orm import Session
+from chatbot import LLM
+
+
 Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI()
-
-
-def run_migration():
-    system("alembic upgrade head")
-
-
-@app.on_event("startup")
-def startup_event():
-    run_migration()
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,6 +35,7 @@ def healthcheck(request: Request):
 def get_posts(db=Depends(get_db)):
     posts = db.query(Post).order_by(Post.created_at.desc()).all()
     return posts
+
 
 @app.post("/upload_post/")
 def upload_post(post: PostBase, db=Depends(get_db)):
@@ -98,6 +89,7 @@ def upload_comment(post_id: str, comment: CommentBase, db: Session = Depends(get
     db.refresh(db_comment)
     return db_comment
 
+
 @app.get("/like_comment/{post_id}/{comment_id}")
 def like_comment(post_id: str, comment_id: str, db=Depends(get_db)):
     post = db.query(Post).filter(Post.id == post_id).first()
@@ -113,6 +105,7 @@ def like_comment(post_id: str, comment_id: str, db=Depends(get_db)):
     db.refresh(comment)
     return comment
 
+
 @app.get("/delete_comment/{post_id}/{comment_id}")
 def delete_comment(post_id: str, comment_id: str, db=Depends(get_db)):
     post = db.query(Post).filter(Post.id == post_id).first()
@@ -126,6 +119,7 @@ def delete_comment(post_id: str, comment_id: str, db=Depends(get_db)):
     db.delete(comment)
     db.commit()
     return {"message": "Comment deleted successfully"}
+
 
 @app.post("/AI_bot/")
 def AI_bot(question: QuestionBase, request: Request, db: Session = Depends(get_db)):
