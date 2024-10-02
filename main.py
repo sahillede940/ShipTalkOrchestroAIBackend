@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from chatbot import LLM
 from openai import RateLimitError
-from uuid import UUID
 
 Base.metadata.create_all(bind=engine)
 
@@ -48,6 +47,8 @@ def get_posts(
         "category",
     ]:
         sort_by = "created_at"
+
+    # get db url
 
     query = db.query(Post)
 
@@ -288,7 +289,7 @@ def AI_bot(question: QuestionBase, request: Request, db: Session = Depends(get_d
     try:
         if response.get("related_posts", None):
             for post in response.get("related_posts", []):
-                if post['id']:
+                if post["id"]:
                     PORT = request.url.port
                     if PORT:
                         post["url"] = (
